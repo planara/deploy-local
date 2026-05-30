@@ -1,0 +1,177 @@
+services:
+  gateway:
+    image: ghcr.io/planara/planara-gateway:latest
+    container_name: pres-gateway
+    depends_on:
+      auth:
+        condition: service_started
+      accounts:
+        condition: service_started
+      projects:
+        condition: service_started
+      files:
+        condition: service_started
+      benchmarks:
+        condition: service_started
+      redis:
+        condition: service_started
+    ports:
+      - "5050:8080"
+    environment:
+      Jwt__Issuer: "planara-auth"
+      Jwt__Audience: "planara"
+      Jwt__SigningKey: "9b6d3b3c5a0d4f1f9a7e1c2d3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a"
+      Jwt__AccessTokenMinutes: "15"
+
+      DbConnections__Redis__ConnectionString: "redis:6379"
+
+      GraphQL__Name: "GraphQLSchema"
+      GraphQL__Auth__Uri: "http://auth:8080/graphql"
+      GraphQL__Accounts__Uri: "http://accounts:8080/graphql"
+      GraphQL__Projects__Uri: "http://projects:8080/graphql"
+      GraphQL__Benchmarks__Uri: "http://benchmarks:8080/graphql"
+
+      Rest__Routes__files-route__ClusterId: "files-cluster"
+      Rest__Routes__files-route__RateLimiterPolicy: "rest"
+      Rest__Routes__files-route__Match__Path: "/files/{**catch-all}"
+      Rest__Routes__files-route__Transforms__0__PathPrefix: "/api"
+
+      Rest__Clusters__files-cluster__Destinations__files-service__Address: "http://files:8080/"
+    networks:
+      - planara
+
+  frontend:
+    image: ghcr.io/planara/planara-frontend:latest
+    container_name: pres-frontend
+    ports:
+      - "5174:80"
+    environment:
+      API_UPSTREAM: http://gateway:8080
+    depends_on:
+      - gateway
+    networks:
+      - planara
+
+  auth:
+    image: ghcr.io/planara/planara-auth:latest
+    container_name: svc-auth
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+    command: ["--migrate"]
+    environment:
+      DbConnections__Postgres__ConnectionString: "User ID=postgres;Password=postgres;Host=postgres;Port=5432;Database=auth;Pooling=true;Include Error Detail=true"
+      DbConnections__Redis__ConnectionString: "redis:6379"
+      Jwt__Issuer: "planara-auth"
+      Jwt__Audience: "planara"
+      Jwt__SigningKey: "9b6d3b3c5a0d4f1f9a7e1c2d3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a"
+      Jwt__AccessTokenMinutes: "15"
+      Kafka__BootstrapServers: "kafka:29092"
+      Kafka__ProducerTopics__Auth: "auth"
+      GraphQL__Name: "GraphQLSchema"
+    networks:
+      - planara
+      
+  accounts:
+    image: ghcr.io/planara/planara-accounts:latest
+    container_name: svc-accounts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8082:8080"
+      - "8083:8081"
+    command: [ "--migrate" ]
+    environment:
+      DbConnections__Postgres__ConnectionString: "User ID=postgres;Password=postgres;Host=postgres;Port=5432;Database=accounts;Pooling=true;Include Error Detail=true"
+      DbConnections__Redis__ConnectionString: "redis:6379"
+      Jwt__Issuer: "planara-auth"
+      Jwt__Audience: "planara"
+      Jwt__SigningKey: "9b6d3b3c5a0d4f1f9a7e1c2d3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a"
+      Jwt__AccessTokenMinutes: "15"
+      Kafka__BootstrapServers: "kafka:29092"
+      Kafka__ConsumerTopics__Auth: "auth"
+      Kafka__ConsumerGroupId: "planara-accounts"
+      GraphQL__Name: "GraphQLSchema"
+    networks:
+      - planara
+      
+  projects:
+    image: ghcr.io/planara/planara-projects:latest
+    container_name: svc-projects
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8084:8080"
+      - "8085:8081"
+    command: [ "--migrate" ]
+    environment:
+      DbConnections__Postgres__ConnectionString: "User ID=postgres;Password=postgres;Host=postgres;Port=5432;Database=projects;Pooling=true;Include Error Detail=true"
+      DbConnections__Redis__ConnectionString: "redis:6379"
+      Jwt__Issuer: "planara-auth"
+      Jwt__Audience: "planara"
+      Jwt__SigningKey: "9b6d3b3c5a0d4f1f9a7e1c2d3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a"
+      Jwt__AccessTokenMinutes: "15"
+      GraphQL__Name: "GraphQLSchema"
+    networks:
+      - planara
+      
+  files:
+    image: ghcr.io/planara/planara-files:latest
+    container_name: svc-files
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8086:8080"
+      - "8087:8081"
+    command: [ "--migrate" ]
+    environment:
+      DbConnections__Postgres__ConnectionString: "User ID=postgres;Password=postgres;Host=postgres;Port=5432;Database=files;Pooling=true;Include Error Detail=true"
+      Jwt__Issuer: "planara-auth"
+      Jwt__Audience: "planara"
+      Jwt__SigningKey: "9b6d3b3c5a0d4f1f9a7e1c2d3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a"
+      Jwt__AccessTokenMinutes: "15"
+      Minio__Endpoint: "minio:9000"
+      Minio__AccessKey: "minioadmin"
+      Minio__SecretKey: "minioadmin"
+      Minio__UseSsl: "false"
+    networks:
+      - planara
+      
+  benchmarks:
+    image: ghcr.io/planara/planara-benchmarks:latest
+    container_name: svc-benchmarks
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8088:8080"
+      - "8089:8081"
+    command: [ "--migrate" ]
+    environment:
+      DbConnections__Postgres__ConnectionString: "User ID=postgres;Password=postgres;Host=postgres;Port=5432;Database=benchmarks;Pooling=true;Include Error Detail=true"
+      DbConnections__Redis__ConnectionString: "redis:6379"
+      Jwt__Issuer: "planara-auth"
+      Jwt__Audience: "planara"
+      Jwt__SigningKey: "9b6d3b3c5a0d4f1f9a7e1c2d3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a"
+      Jwt__AccessTokenMinutes: "15"
+      GraphQL__Name: "GraphQLSchema"
+    networks:
+      - planara
+
+volumes:
+  pgdata:
+  redis-data:
+
+networks:
+  planara:
+    driver: bridge
